@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "AI-powered real-time multilingual chat application with React, Express, Socket.IO, Prisma, PostgreSQL, Cloudinary, and Gemini.",
+  "engines": {
+    "node": "22.x"
+  },
   "workspaces": [
     "backend",
     "frontend"
