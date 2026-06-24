@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+.env
+.env.*
+!.env.example
+coverage
+*.log
+.DS_Store
+backend/generated
+backend/uploads
+frontend/.vite
+prisma/dev.db

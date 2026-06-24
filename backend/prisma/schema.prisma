@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConversationType {
+  PRIVATE
+  GROUP
+}
+
+enum ConversationRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum AttachmentType {
+  IMAGE
+  PDF
+  DOCUMENT
+  OTHER
+}
+
+enum NotificationType {
+  NEW_MESSAGE
+  GROUP_INVITE
+  CONTACT_REQUEST
+  SYSTEM
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum ContactStatus {
+  PENDING
+  ACCEPTED
+}
+
+model User {
+  id                   String               @id @default(uuid())
+  username             String               @unique
+  email                String               @unique
+  passwordHash         String
+  avatar               String?
+  preferredLanguage    String               @default("en")
+  autoTranslateEnabled Boolean              @default(false)
+  regionalSlangMode    Boolean              @default(false)
+  isOnline             Boolean              @default(false)
+  lastSeen             DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  conversations        ConversationMember[]
+  createdConversations Conversation[]       @relation("CreatedConversations")
+  sentMessages         Message[]            @relation("SentMessages")
+  reactions            Reaction[]
+  readReceipts         MessageReadReceipt[]
+  notifications        Notification[]
+  sentInvitations      GroupInvitation[]    @relation("SentInvitations")
+  receivedInvitations  GroupInvitation[]    @relation("ReceivedInvitations")
+  sentContacts         Contact[]            @relation("SentContacts")
+  receivedContacts     Contact[]            @relation("ReceivedContacts")
+}
+
+model Conversation {
+  id          String               @id @default(uuid())
+  type        ConversationType     @default(PRIVATE)
+  name        String?
+  avatar      String?
+  createdById String?
+  createdBy   User?                @relation("CreatedConversations", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  members     ConversationMember[]
+  messages    Message[]
+  invitations GroupInvitation[]
+
+  @@index([type])
+  @@index([updatedAt])
+}
+
+model ConversationMember {
+  id             String           @id @default(uuid())
+  conversationId String
+  userId         String
+  role           ConversationRole @default(MEMBER)
+  unreadCount    Int              @default(0)
+  muted          Boolean          @default(false)
+  joinedAt       DateTime         @default(now())
+
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id               String               @id @default(uuid())
+  conversationId   String
+  senderId         String
+  content          String               @db.Text
+  originalLanguage String?
+  replyToId        String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
+
+  conversation     Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender           User                 @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo          Message?             @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies          Message[]            @relation("MessageReplies")
+  attachments      MessageAttachment[]
+  translations     Translation[]
+  reactions        Reaction[]
+  readReceipts     MessageReadReceipt[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@index([replyToId])
+}
+
+model MessageAttachment {
+  id        String         @id @default(uuid())
+  messageId String
+  url       String
+  publicId  String?
+  fileName  String
+  mimeType  String
+  size      Int
+  type      AttachmentType @default(OTHER)
+  createdAt DateTime       @default(now())
+
+  message   Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model Translation {
+  id             String   @id @default(uuid())
+  messageId      String
+  languageCode   String
+  sourceLanguage String?
+  translatedText String   @db.Text
+  translatedByAI Boolean  @default(true)
+  slangMode      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  message        Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, languageCode, slangMode])
+  @@index([languageCode])
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([userId])
+}
+
+model MessageReadReceipt {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  userId         String
+  title          String
+  content        String
+  type           NotificationType @default(SYSTEM)
+  isRead         Boolean          @default(false)
+  conversationId String?
+  messageId      String?
+  createdAt      DateTime         @default(now())
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model GroupInvitation {
+  id             String           @id @default(uuid())
+  conversationId String
+  inviterId      String
+  inviteeId      String
+  status         InvitationStatus @default(PENDING)
+  createdAt      DateTime         @default(now())
+  respondedAt    DateTime?
+
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  inviter        User             @relation("SentInvitations", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee        User             @relation("ReceivedInvitations", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, inviteeId])
+  @@index([inviteeId, status])
+}
+
+model Contact {
+  id          String        @id @default(uuid())
+  requesterId String
+  addresseeId String
+  status      ContactStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  requester   User          @relation("SentContacts", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User          @relation("ReceivedContacts", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+}
